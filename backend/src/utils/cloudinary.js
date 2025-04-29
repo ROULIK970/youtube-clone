@@ -16,7 +16,7 @@ import fs from "fs"
         resource_type:"auto"
     })
 
-    console.log("FILE IS UPLOADED ON CLOUDINARY", response.url)
+    console.log("FILE IS UPLOADED ON CLOUDINARY", response)
 
     return response
   } catch (error) {
