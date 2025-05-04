@@ -17,7 +17,8 @@ import fs from "fs"
     })
 
     console.log("FILE IS UPLOADED ON CLOUDINARY", response)
-
+    fs.unlinkSync(localFilePath)
+    
     return response
   } catch (error) {
     fs.unlinkSync(localFilePath) //remove the locally saved temp file after upload failed
