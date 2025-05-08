@@ -3,16 +3,16 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import jwt from "jsonwebtoken"
+import jwt from "jsonwebtoken";
 
 const generateAccessAndRefreshToken = async (userId) => {
   try {
     const user = await User.findById(userId);
-    console.log(user.email)
-    const accessToken =  user.generateAccessToken();
-    const refreshToken =  user.generateRefreshToken();
-    console.log(accessToken)
-    console.log(refreshToken)
+    console.log(user.email);
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+    console.log(accessToken);
+    console.log(refreshToken);
 
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
@@ -22,6 +22,27 @@ const generateAccessAndRefreshToken = async (userId) => {
     throw new ApiError(
       500,
       "Something went wrong while generating access and refresh token!"
+    );
+  }
+};
+
+const checkIfPasswordStrong = (password) => {
+  const hasUpperCase = password
+    .split("")
+    .some((pass) => pass.toUpperCase() && pass !== pass.toLowerCase());
+
+  const specialChar = "@!#$%^&*()_+)";
+  const hasSpecialChar = password
+    .split("")
+    .some((char) => specialChar.includes(char));
+
+  const numbers = "1234567890";
+  const hasNumbers = password.split("").some((char) => numbers.includes(char));
+
+  if (!(password.length >= 7 && hasUpperCase && hasSpecialChar && hasNumbers)) {
+    throw new ApiError(
+      401,
+      "Password is not strong enough.Password should include Uppercase, Special Character and Numbers"
     );
   }
 };
@@ -49,25 +70,7 @@ const registerUser = asyncHandler(async (req, res) => {
 
   //tony12
   //check if password is strong
-  const hasUpperCase = password
-    .split("")
-    .some((pass) => pass.toUpperCase() && pass !== pass.toLowerCase());
-
-  const specialChar = "@!#$%^&*()_+)";
-  const hasSpecialChar = password
-    .split("")
-    .some((char) => specialChar.includes(char));
-
-  const numbers = "1234567890";
-  const hasNumbers = password.split("").some((char) => numbers.includes(char));
-
-  if (!(password.length >= 7 && hasUpperCase && hasSpecialChar && hasNumbers)) {
-    throw new ApiError(
-      401,
-      "Password is not strong enough.Password should include Uppercase, Special Character and Numbers"
-    );
-  }
-
+  checkIfPasswordStrong(password);
   //throw error if exists
   //check for images, check for avatar
 
@@ -125,7 +128,7 @@ const loginUser = asyncHandler(async (req, res) => {
   //check for email and password match in database
   //return response
   const { email, username, password } = req.body;
-  if (!(email?.trim() || username?.trim())) {
+  if (!email?.trim() || !username?.trim()) {
     throw new ApiError(400, "Username or email required!");
   }
   const user = await User.findOne({
@@ -153,7 +156,7 @@ const loginUser = asyncHandler(async (req, res) => {
   );
 
   const options = {
-    httpOnly: true
+    httpOnly: true,
   };
 
   return res
@@ -174,11 +177,11 @@ const loginUser = asyncHandler(async (req, res) => {
 });
 
 const logoutUser = asyncHandler(async (req, res) => {
-  console.log(req.cookies)
+  console.log(req.cookies);
   await User.findByIdAndUpdate(
     req.user._id,
     {
-      $unset: { refreshToken: "" }
+      $unset: { refreshToken: "" },
     },
     {
       new: true,
@@ -193,49 +196,194 @@ const logoutUser = asyncHandler(async (req, res) => {
     .status(200)
     .clearCookie("accessToken", options)
     .clearCookie("refreshToken", options)
-    .json(new ApiResponse(200, {}, "User logged out successfully!"))
+    .json(new ApiResponse(200, {}, "User logged out successfully!"));
 });
 
-const refreshAccessToken = asyncHandler(async(req,res)=>{
-  const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
+const refreshAccessToken = asyncHandler(async (req, res) => {
+  const incomingRefreshToken =
+    req.cookies.refreshToken || req.body.refreshToken;
 
-  if(!incomingRefreshToken){
-    throw new ApiError(401, "Unauthorised request!")
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "Unauthorised request!");
   }
-   
 
   try {
-    const decodedToken = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET);
-  
-    if(!decodedToken){
+    const decodedToken = jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+
+    if (!decodedToken) {
       throw new ApiError(401, "Unauthorised request!");
     }
-  
-    const user = await User.findById(decodedToken?._id)
-  
-    if(!user){
-      throw new ApiError(401, "Invalid RefreshToken!")
+
+    const user = await User.findById(decodedToken?._id);
+
+    if (!user) {
+      throw new ApiError(401, "Invalid RefreshToken!");
     }
-  
-    if(incomingRefreshToken !== user?.refreshToken){
+
+    if (incomingRefreshToken !== user?.refreshToken) {
       throw new ApiError(401, "Refresh Token is expired or used");
     }
-  
-    const options={
-      httpOnly:true
-    }
-  
-    const {accessToken, newRefreshToken} = await user.generateAccessAndRefreshToken(user._Id)
-  
+
+    const options = {
+      httpOnly: true,
+    };
+
+    const { accessToken, newRefreshToken } =
+      await user.generateAccessAndRefreshToken(user._Id);
+
     return res
       .status(200)
       .cookie("accessToken", accessToken, options)
       .cookie("newRefreshToken", newRefreshToken, options)
-      .json(new ApiResponse(200,{accessToken, refreshToken: newRefreshToken}, "Access token refreshed!"));
+      .json(
+        new ApiResponse(
+          200,
+          { accessToken, refreshToken: newRefreshToken },
+          "Access token refreshed!"
+        )
+      );
   } catch (error) {
-    throw new ApiError(401, error?.message || "Something went Wrong! Couldn't refresh Token")
+    throw new ApiError(
+      401,
+      error?.message || "Something went Wrong! Couldn't refresh Token"
+    );
   }
-})
+});
 
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+  if (!oldPassword?.trim() || !newPassword?.trim()) {
+    throw new ApiError(401, "Both Old and New passwords are required!");
+  }
+
+  const strongPassword = checkIfPasswordStrong(newPassword);
+
+  if (!strongPassword) {
+    throw new ApiError(401, "New Password isn't strong enough!");
+  }
+
+  const user = await User.findbyId(req.user._id);
+
+  const isPasswordValid = await user.isPasswordCorrect(oldPassword);
+
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Password does not match!");
+  }
+
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password saved successfully!"));
+
+  //get oldpassword and newpassword front frontend
+  //get user from req.user
+});
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+  return res
+    .status(201)
+    .json(new ApiResponse(201, req.user, "Current User fetched successfully!"));
+});
+
+const updateAccoutDetails = asyncHandler(async (req, res) => {
+  const { fullname, email } = req.body;
+
+  if (!fullname || !email) {
+    throw new ApiError(400, "All fields are required");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        fullname,
+        email,
+      },
+    },
+    {
+      new: true,
+    }
+  ).select("-password -refreshToken");
+
+  if (!user) {
+    throw new ApiError(500, "Account details failed to update!");
+  }
+
+  res
+    .status(201)
+    .json(new ApiResponse(200, user, "Account details updated successfully!"));
+});
+
+const updateUserAvatar = asyncHandler(async (req, res) => {
+  const avatarLocalPath = req.file?.path;
+
+  if (!avatarLocalPath) {
+    throw new ApiError(400, "Avatar file is missing!");
+  }
+
+  const avatar = await uploadOnCloudinary(avatarLocalPath);
+
+  if (!avatar) {
+    throw new ApiError(400, "Error while uploading avatar to cloudinary!");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        avatar: avatar.url,
+      },
+    },
+    { new: true }
+  ).select("-password")
+
+  res
+  .status(201)
+  .json( new ApiResponse(201, user, "Avatar updated sucessfully!"))
+});
+
+const updateUserCoverImage = asyncHandler(async (req, res) => {
+  const coverImageLocalPath = req.file?.path;
+
+  if (!coverImageLocalPath) {
+    throw new ApiError(400, "Cover Image is missing!");
+  }
+
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+
+  if (!coverImage) {
+    throw new ApiError(400, "Error while uploading cover image to cloudinary!");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        coverImage: coverImage.url,
+      },
+    },
+    { new: true }
+  ).select("-password");
+
+  res
+    .status(201)
+    .json(new ApiResponse(201, user, "Cover Image updated sucessfully!"));
+});
+
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  changeCurrentPassword,
+  getCurrentUser,
+  updateAccoutDetails,
+  updateUserAvatar,
+  updateUserCoverImage,
+};
